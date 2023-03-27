@@ -1,17 +1,17 @@
 import { useEffect, useState } from 'react'
-import { ethers } from 'ethers'
 import axios from 'axios'
-import { NftSwapV4 } from '@traderxyz/nft-swap-sdk';
-import Web3Modal from 'web3modal'
-import { alchemy, utils } from '../client/alchemy'
+import { NftSwapV4, SwappableAssetV4, SwappableNftV4 } from '@traderxyz/nft-swap-sdk';
+
+import { PostOrderResponsePayload } from '@traderxyz/nft-swap-sdk/dist/sdk/v4/orderbook';
+import { utils } from '../client/alchemy'
 import { getAccount, getProvider, fetchSigner } from '@wagmi/core'
 
 import { getHumanReadableTime, getPolygonScanLink, isOrderExpired, shortenAddress } from '@/helpers'
 
+type Orders = PostOrderResponsePayload[]
 
 export default function Home() {
-  const [orders, setOrders] = useState([])
-  const [address, setAddress] = useState(null)
+  const [orders, setOrders] = useState<Orders>([])
   const [nfts, setNfts] = useState([])
   const [loadingState, setLoadingState] = useState('not-loaded')
   useEffect(() => {
@@ -19,38 +19,24 @@ export default function Home() {
     loadOrders()
   }, [])
 
-  const buyNFT = async (signedOrder: any, nftObj: nftObj, priceObj: priceObj) => {
+  const buyNFT = async (signedOrder: any, nft: SwappableNftV4, price: SwappableAssetV4) => {
     const provider = getProvider()
     const account = getAccount()
     const signer = await fetchSigner()
+    if (!signer?._isSigner) {
+      throw new Error('Signer is not a signer')
+    }
     console.log(provider, account, signer)
     const nftSwapSdk = new NftSwapV4(provider, signer , 137); // 137 is the chainId for Polygon
     console.log(nftSwapSdk)
     // Check if we need to approve the NFT for swapping
     console.log(
-      `Checking if ${priceObj.tokenAddress} contract is approved to swap with 0x v4...`
+      `Checking if ${price.tokenAddress} contract is approved to swap with 0x v4...`
     )
-    console.log({nftObj, priceObj})
+    console.log({nft, price})
     // check if ERC20 is native token
     const isErc20NativeToken =  nftSwapSdk.isErc20NativeToken(signedOrder);
-    console.log(`Is ERC20: ${priceObj.tokenAddress} native token: ${isErc20NativeToken}`)
-    
-    const approvalStatusForBuyer = await nftSwapSdk.loadApprovalStatus(
-      priceObj,
-      account.address
-    );
-    // If we do need to approve NFT for swapping, let's do that now
-    if (!approvalStatusForBuyer.contractApproved) {
-      const approvalTx = await nftSwapSdk.approveTokenOrNftByAsset(
-        priceObj,
-        account.address
-      );
-      const approvalTxReceipt = await approvalTx.wait();
-      console.log(
-        `Approved ${nftObj.tokenAddress} contract to swap with 0x. TxHash: ${approvalTxReceipt.transactionHash})`
-      );
-    }
-
+    console.log(`Is ERC20: ${price.tokenAddress} native token: ${isErc20NativeToken}`)
 
     // The final step is the taker (User B) submitting the order.
     // The taker approves the trade transaction and it will be submitted on the blockchain for settlement.
@@ -65,20 +51,21 @@ export default function Home() {
 
   const loadAccountInfo = async () => {
     const address = getAccount()
-    console.log(address); // prints the current connected wallet address
-    setAddress(address.address)
+    console.log(address)
   }
 
-  const handleBuyClick = async (order) => {
+  const handleBuyClick = async (order: PostOrderResponsePayload) => {
     console.log("Buy NFT")
     console.log(order)
 
-    const nftValue: nftObj = {
-      tokenAddress: order?.nftToken,
-      tokenId: order?.nftTokenId,
-      type: order?.nftType,
+    const nftValue: SwappableNftV4 = {
+      tokenAddress: order.nftToken,
+      tokenId: order.nftTokenId,
+      amount: order.nftTokenAmount,
+      type: order.nftType as "ERC721" | "ERC1155",
     }
-    const priceValue: priceObj = {
+
+    const priceValue: SwappableAssetV4 = {
       tokenAddress: order.erc20Token, //polygon matic address
       amount: order.erc20TokenAmount,
       type: "ERC20",
@@ -90,52 +77,32 @@ export default function Home() {
 
   const loadOrders = async () => {
     console.log("loading nfts")
-    try {
-      const {data: allOrders} = await axios.get('https://api.trader.xyz/orderbook/orders', {
-        params: {
-          chainId: 137,
-          visibility: 'public',
-          status: 'open'
-        }
-      });
-      console.log(allOrders.orders.slice(0, 10))
-      if (allOrders.orders.length > 0) {
-        // filter any orders that are expired
-        const orders = allOrders.orders.filter(order => {
-          return !isOrderExpired(order.order.expiry)
-        })
-        // sort order by expiry time ascending
-        //orders.sort((a, b) => Number(b.order.expiry) - Number(a.order.expiry));
-  
-        // only show nft orders ERC721 or ERC1155
-        const nftOrders = orders.length > 1 
-          ? orders.filter(order => order.nftType === 'ERC721' || order.nftType === 'ERC1155')
-          : []
-        /* 
-        // batch fetch nft metadata
-        const nftTokens = nftOrders.map(order => ({
-          contractAddress: order.nftToken,
-          tokenId: order.nftTokenId,
-          nftType: order.nftType
-        }))
-
-        console.log("nftTokens")
-        console.log(nftTokens)
-        
-        const nftMetadata = await alchemy.nft.getNftMetadataBatch(nftTokens)
-        const nftMetadataMap = {}
-        nftMetadata.forEach(nft => {
-          nftMetadataMap[`${nft.contract.address}-${nft.tokenId}`] = nft
-        }) */
-        
-        setOrders(nftOrders)
-        //setNfts(nftMetadataMap)
-        setLoadingState('loaded') 
-        //console.log(nftMetadataMap)
-        console.log("-----------------")
+    const {data: allOrders} = await axios.get('https://api.trader.xyz/orderbook/orders', {
+      params: {
+        chainId: 137,
+        visibility: 'public',
+        status: 'open'
       }
-    } catch (error) {
-      console.log(error)
+    });
+    console.log(allOrders.orders.slice(0, 10))
+    if (allOrders.orders.length > 0) {
+      // filter any orders that are expired
+      const orders: PostOrderResponsePayload[] = allOrders.orders.filter((order: PostOrderResponsePayload) => {
+        return !isOrderExpired(order.order.expiry)
+      })
+      // sort order by expiry time ascending
+      //orders.sort((a, b) => Number(b.order.expiry) - Number(a.order.expiry));
+
+      // only show nft orders ERC721 or ERC1155
+      const nftOrders: PostOrderResponsePayload[] = orders.length > 1 
+        ? orders.filter(order => order.nftType === 'ERC721' || order.nftType === 'ERC1155')
+        : []
+      
+      setOrders(nftOrders)
+      //setNfts(nftMetadataMap)
+      setLoadingState('loaded') 
+      //console.log(nftMetadataMap)
+      console.log("-----------------")
     }
   }
 
@@ -159,7 +126,7 @@ export default function Home() {
             </tr>
           </thead>
           <tbody>
-            {orders.length > 0 && orders.map((order, i) => order && (
+            {orders.length > 0 && orders.map((order: PostOrderResponsePayload, i) => order && (
               <tr key={i} className="bg-white whitespace-nowrap border-b dark:bg-gray-800 dark:border-gray-700">
                 <td className="px-6 py-4">
                   {order.sellOrBuyNft.toUpperCase()}
@@ -187,12 +154,7 @@ export default function Home() {
                   </a>
                 </td>
                 <td className="px-6 py-4">
-                  {order.orderStatus.status || "Active"}
-                </td>
-                <td className="px-6 py-4">
-                  <a href={getPolygonScanLink(order.orderStatus.transactionHash, "tx")} target="_blank">
-                    {shortenAddress(order.orderStatus.transactionHash)}
-                  </a>
+                  {"Active"}
                 </td>
                 <td className="px-6 py-4">
                   {order.sellOrBuyNft === 'sell' && (
