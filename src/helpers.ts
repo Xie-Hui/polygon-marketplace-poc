@@ -2,7 +2,7 @@ import moment from 'moment';
 
 export const getHumanReadableTime = (timestamp: string) => {
   const momentObj = moment.unix(Number(timestamp));
-  const duration = moment.duration(moment().diff(momentObj));
+  const duration = moment.duration(momentObj.diff(moment()));
   return duration.humanize(true);
 }
 

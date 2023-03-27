@@ -4,7 +4,7 @@ import { polygon } from 'wagmi/chains'
 
 const chains = [polygon]
 if (!process.env.WALLET_CONNECT_PROJECT_ID) {
-  throw new Error("You need to provide NEXT_PUBLIC_PROJECT_ID env variable");
+  throw new Error("You need to provide WALLET_CONNECT_PROJECT_ID env variable");
 }
 const projectId = process.env.WALLET_CONNECT_PROJECT_ID
 
