@@ -121,7 +121,6 @@ export default function Home() {
               <th scope="col" className="px-6 py-3">Expiry date</th>
               <th scope="col" className="px-6 py-3">Maker Address</th>
               <th scope="col" className="px-6 py-3">Order Status</th>
-              <th scope="col" className="px-6 py-3">Tx</th>
               <th scope="col" className="px-6 py-3">Buy Now</th>
             </tr>
           </thead>
